@@ -7,7 +7,7 @@ from fastapi.openapi.utils import get_openapi
 from ekcip_api.db.session import close_db, init_db
 from ekcip_api.exceptions import register_exception_handlers
 from ekcip_api.middleware.trace import TraceIdMiddleware
-from ekcip_api.routes import admin, connectors, conversations, graph, health, knowledge, llm
+from ekcip_api.routes import admin, actions, connectors, conversations, graph, health, knowledge, llm
 from ekcip_connectors.factory import build_runtime_connectors
 from ekcip_connectors.mcp_registry import get_mcp_registry
 from ekcip_graph.client import verify_neo4j_connection
@@ -105,6 +105,7 @@ def create_app() -> FastAPI:
     application.include_router(health.router, tags=["health"])
     application.include_router(connectors.router, prefix="/v1/connectors", tags=["connectors"])
     application.include_router(conversations.router, prefix="/v1/conversations", tags=["conversations"])
+    application.include_router(actions.router, prefix="/v1/actions", tags=["actions"])
     application.include_router(llm.router, prefix="/v1/llm", tags=["llm"])
     application.include_router(graph.router, prefix="/v1/graph", tags=["graph"])
     application.include_router(knowledge.router, prefix="/v1/knowledge", tags=["knowledge"])

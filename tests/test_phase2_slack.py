@@ -27,6 +27,32 @@ def test_message_document_shapes_payload():
 
 
 @pytest.mark.asyncio
+async def test_get_channel_info_falls_back_on_missing_scope(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def mock_get(url: str, **kwargs: object) -> MagicMock:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"ok": False, "error": "missing_scope"}
+        return response
+
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+
+    monkeypatch.setattr(
+        "ekcip_connectors.runtime.slack.httpx.AsyncClient",
+        lambda **kwargs: mock_client,
+    )
+
+    connector = SlackConnector("xoxb-test")
+    info = await connector.get_channel_info("C01234567")
+    assert info["id"] == "C01234567"
+    assert info["name"] == "C01234567"
+
+
+@pytest.mark.asyncio
 async def test_knowledge_status_includes_slack(client):
     response = await client.get("/v1/knowledge/status")
     assert response.status_code == 200

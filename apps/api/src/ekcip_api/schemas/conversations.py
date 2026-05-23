@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from ekcip_api.schemas.actions import ProposedActionResponse
+
 
 class CreateConversationRequest(BaseModel):
     title: str | None = Field(default=None, max_length=512)
@@ -44,6 +46,7 @@ class AssistantReply(BaseModel):
     llm_provider: str | None = None
     llm_model: str | None = None
     citations: list[CitationResponse] = Field(default_factory=list)
+    proposed_actions: list[ProposedActionResponse] = Field(default_factory=list)
 
 
 class ConversationDetailResponse(BaseModel):

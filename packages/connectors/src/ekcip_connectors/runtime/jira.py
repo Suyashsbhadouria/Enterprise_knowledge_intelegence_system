@@ -215,6 +215,87 @@ class JiraConnector(ConnectorPort):
             )
         return response.json()
 
+    async def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
+        payload = {
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": body}],
+                    }
+                ],
+            }
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{self._base_url}/rest/api/3/issue/{issue_key}/comment",
+                headers=self._headers(),
+                json=payload,
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Jira add_comment failed: HTTP {response.status_code} {response.text[:400]}"
+            )
+        data = response.json()
+        return {
+            "issue_key": issue_key,
+            "comment_id": data.get("id"),
+            "self": data.get("self"),
+        }
+
+    async def list_transitions(self, issue_key: str) -> list[dict[str, Any]]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self._base_url}/rest/api/3/issue/{issue_key}/transitions",
+                headers=self._headers(),
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Jira list_transitions failed: HTTP {response.status_code} {response.text[:400]}"
+            )
+        data = response.json()
+        return list(data.get("transitions", []))
+
+    async def transition_issue(self, issue_key: str, status_name: str) -> dict[str, Any]:
+        normalized = status_name.strip().lower()
+        transitions = await self.list_transitions(issue_key)
+        match = next(
+            (
+                transition
+                for transition in transitions
+                if str((transition.get("to") or {}).get("name", "")).strip().lower() == normalized
+                or str(transition.get("name", "")).strip().lower() == normalized
+            ),
+            None,
+        )
+        if match is None:
+            available = [
+                str((transition.get("to") or {}).get("name") or transition.get("name"))
+                for transition in transitions
+            ]
+            raise RuntimeError(
+                f"No Jira transition to '{status_name}' for {issue_key}. "
+                f"Available: {', '.join(available) or 'none'}"
+            )
+        transition_id = str(match["id"])
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{self._base_url}/rest/api/3/issue/{issue_key}/transitions",
+                headers=self._headers(),
+                json={"transition": {"id": transition_id}},
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Jira transition_issue failed: HTTP {response.status_code} {response.text[:400]}"
+            )
+        return {
+            "issue_key": issue_key,
+            "status_name": status_name,
+            "transition_id": transition_id,
+        }
+
     async def get_issue(self, issue_key: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(

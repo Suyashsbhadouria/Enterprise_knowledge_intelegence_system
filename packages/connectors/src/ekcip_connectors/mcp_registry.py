@@ -62,7 +62,7 @@ def _phase_for_source(source: ConnectorSource) -> int:
         "jira": 1,
         "confluence": 2,
         "github": 2,
-        "slack": 2,
+        "slack": 4,
         "meetings": 5,
         "documents": 2,
         "postgres_neon": 0,

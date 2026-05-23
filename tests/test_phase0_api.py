@@ -59,8 +59,11 @@ async def test_conversation_flow(client):
         "2-qa-no-llm",
         "3-qa",
         "3-qa-no-llm",
+        "4-qa-proposed",
+        "4-action-proposed",
     }
     assert "citations" in msg_body["data"]
+    assert "proposed_actions" in msg_body["data"]
 
     get_resp = await client.get(f"/v1/conversations/{conversation_id}")
     assert get_resp.status_code == 200

@@ -1,4 +1,4 @@
-"""Slack Web API client for read-only channel history ingest (Phase 2)."""
+"""Slack Web API client: read ingest (Phase 2) and write actions (Phase 4)."""
 
 import time
 from typing import Any
@@ -13,10 +13,28 @@ logger = get_logger(__name__)
 
 _API_ROOT = "https://slack.com/api"
 
+# Bot token scopes required for read-only channel ingest (OAuth & Permissions → reinstall after changes).
+SLACK_READ_SCOPES = (
+    "channels:history",
+    "channels:read",
+    "groups:history",
+    "groups:read",
+)
+
+SLACK_WRITE_SCOPES = ("chat:write",)
+
+_SCOPE_HINTS: dict[str, str] = {
+    "conversations.info": "channels:read (public channels) and/or groups:read (private channels)",
+    "conversations.history": "channels:history (public) and/or groups:history (private)",
+}
+
 
 class SlackConnector(ConnectorPort):
     name = "slack"
-    capabilities = (ConnectorCapability.READ,)
+    capabilities = (
+        ConnectorCapability.READ,
+        ConnectorCapability.WRITE,
+    )
 
     def __init__(self, bot_token: str) -> None:
         self._token = bot_token
@@ -26,6 +44,27 @@ class SlackConnector(ConnectorPort):
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json; charset=utf-8",
         }
+
+    async def _api_post(self, method: str, json_body: dict[str, Any]) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{_API_ROOT}/{method}",
+                headers=self._headers(),
+                json=json_body,
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(f"Slack {method} failed: HTTP {response.status_code}")
+        data = response.json()
+        if not data.get("ok"):
+            error = str(data.get("error", "unknown"))
+            if error == "missing_scope":
+                hint = ", ".join((*SLACK_READ_SCOPES, *SLACK_WRITE_SCOPES))
+                raise RuntimeError(
+                    f"Slack {method} error: missing_scope. Add Bot Token Scopes: {hint}. "
+                    "Reinstall the app and update SLACK_BOT_TOKEN."
+                )
+            raise RuntimeError(f"Slack {method} error: {error}")
+        return data
 
     async def _api_get(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -38,7 +77,17 @@ class SlackConnector(ConnectorPort):
             raise RuntimeError(f"Slack {method} failed: HTTP {response.status_code}")
         data = response.json()
         if not data.get("ok"):
-            raise RuntimeError(f"Slack {method} error: {data.get('error', 'unknown')}")
+            error = str(data.get("error", "unknown"))
+            if error == "missing_scope":
+                hint = _SCOPE_HINTS.get(
+                    method,
+                    ", ".join(SLACK_READ_SCOPES),
+                )
+                raise RuntimeError(
+                    f"Slack {method} error: missing_scope. Add these Bot Token Scopes: {hint}. "
+                    "Reinstall the app to your workspace, then copy the new xoxb- token into SLACK_BOT_TOKEN."
+                )
+            raise RuntimeError(f"Slack {method} error: {error}")
         return data
 
     async def health(self) -> ConnectorHealth:
@@ -66,13 +115,27 @@ class SlackConnector(ConnectorPort):
         return str(int(time.time()) - max(days, 1) * 86400)
 
     async def get_channel_info(self, channel_id: str) -> dict[str, Any]:
-        data = await self._api_get("conversations.info", {"channel": channel_id})
-        channel = data.get("channel") or {}
-        return {
-            "id": channel.get("id", channel_id),
-            "name": channel.get("name", channel_id),
-            "is_private": bool(channel.get("is_private")),
-        }
+        """Resolve channel name; falls back to channel_id if read scope is missing."""
+        try:
+            data = await self._api_get("conversations.info", {"channel": channel_id})
+            channel = data.get("channel") or {}
+            return {
+                "id": channel.get("id", channel_id),
+                "name": channel.get("name", channel_id),
+                "is_private": bool(channel.get("is_private")),
+            }
+        except RuntimeError as exc:
+            if "missing_scope" in str(exc):
+                logger.warning(
+                    "slack_channel_info_skipped_missing_scope",
+                    channel_id=channel_id,
+                )
+                return {
+                    "id": channel_id,
+                    "name": channel_id,
+                    "is_private": None,
+                }
+            raise
 
     async def fetch_channel_messages(
         self,
@@ -100,6 +163,40 @@ class SlackConnector(ConnectorPort):
             if not cursor:
                 break
         return messages[:max_messages]
+
+    async def post_message(
+        self,
+        channel_id: str,
+        text: str,
+        *,
+        thread_ts: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"channel": channel_id, "text": text}
+        if thread_ts:
+            body["thread_ts"] = thread_ts
+        data = await self._api_post("chat.postMessage", body)
+        return {
+            "channel": data.get("channel", channel_id),
+            "ts": data.get("ts"),
+            "message": (data.get("message") or {}).get("text", text),
+        }
+
+    async def schedule_message(
+        self,
+        channel_id: str,
+        text: str,
+        *,
+        post_at: int,
+    ) -> dict[str, Any]:
+        data = await self._api_post(
+            "chat.scheduleMessage",
+            {"channel": channel_id, "text": text, "post_at": post_at},
+        )
+        return {
+            "channel": data.get("channel", channel_id),
+            "scheduled_message_id": data.get("scheduled_message_id"),
+            "post_at": post_at,
+        }
 
     def message_document(
         self,

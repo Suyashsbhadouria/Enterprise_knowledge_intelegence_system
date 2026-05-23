@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     slack_sync_days: int = 30
     slack_max_messages_per_channel: int = 100
 
+    # Phase 4 approval-aware actions
+    actions_enabled: bool = True
+    actions_require_approval: bool = True
+
     # Enterprise dev seed: sync real tenant data (no fake Jira issues)
     seed_jira_project_keys: str = ""
     seed_jira_days: int = 90
