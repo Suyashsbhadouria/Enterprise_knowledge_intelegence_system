@@ -44,6 +44,7 @@ class GitHubSyncRequest(BaseModel):
     )
     days: int | None = Field(default=None, ge=1, le=365)
     max_results_per_repo: int = Field(default=50, ge=1, le=200)
+    max_commits_per_repo: int = Field(default=50, ge=1, le=500)
 
 
 class SlackSyncRequest(BaseModel):
@@ -212,6 +213,7 @@ async def sync_github(
             repos=repos,
             days=body.days or settings.github_sync_days,
             max_results_per_repo=body.max_results_per_repo,
+            max_commits_per_repo=body.max_commits_per_repo or settings.github_max_commits_per_repo,
         )
         await session.commit()
     except Exception as exc:

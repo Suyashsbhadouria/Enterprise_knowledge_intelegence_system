@@ -246,6 +246,7 @@ async def seed_all_sources(
                 repos=repos,
                 days=settings.github_sync_days,
                 max_results_per_repo=min(per_project, settings.github_max_results_per_repo),
+                max_commits_per_repo=settings.github_max_commits_per_repo,
             )
             all_github_items = list(gh_result.get("items") or [])
             results["github"] = gh_result

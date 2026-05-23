@@ -86,8 +86,8 @@ Uses the same Atlassian email + API token as Jira. Set `CONFLUENCE_BASE_URL` or 
 ### GitHub (read-only)
 
 1. Set `GITHUB_TOKEN` and `GITHUB_REPOS=owner/repo,owner/other` (explicit bounded list).
-2. Sync: `POST /v1/knowledge/github/sync` — issues and PRs updated within `GITHUB_SYNC_DAYS` (default 90).
-3. Chat cites items like `acme/app#42` (issues) and `acme/app!7` (pull requests).
+2. Sync: `POST /v1/knowledge/github/sync` — issues, PRs, and **commits** updated within `GITHUB_SYNC_DAYS` (default 90).
+3. Chat cites items like `acme/app#42` (issues), `acme/app!7` (PRs), and `acme/app@a1b2c3d` (commits with message + push time).
 
 ### Slack (read-only)
 
@@ -117,7 +117,7 @@ Requires Neo4j populated via `POST /v1/admin/seed` (enterprise graph from real J
 | GET | `/v1/knowledge/status` | Indexed chunk counts (Jira + Confluence) |
 | POST | `/v1/knowledge/jira/sync` | Index Jira issues (read + embed) |
 | POST | `/v1/knowledge/confluence/sync` | Index Confluence pages (read + embed) |
-| POST | `/v1/knowledge/github/sync` | Index GitHub issues/PRs (read + embed) |
+| POST | `/v1/knowledge/github/sync` | Index GitHub issues, PRs, and commits (read + embed) |
 | POST | `/v1/knowledge/slack/sync` | Index Slack channel messages (read + embed) |
 | POST | `/v1/conversations` | Create thread |
 | POST | `/v1/conversations/{id}/messages` | RAG chat with citations |

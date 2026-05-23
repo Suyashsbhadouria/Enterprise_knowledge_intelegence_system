@@ -98,6 +98,41 @@ class GitHubConnector(ConnectorPort):
 
         return items[:max_results]
 
+    async def list_recent_commits(
+        self,
+        repo: str,
+        *,
+        since_iso: str,
+        max_results: int,
+    ) -> list[dict[str, Any]]:
+        owner, name = repo.split("/", 1)
+        commits: list[dict[str, Any]] = []
+        page = 1
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            while len(commits) < max_results:
+                response = await client.get(
+                    f"{_API_ROOT}/repos/{owner}/{name}/commits",
+                    headers=self._headers(),
+                    params={
+                        "since": since_iso,
+                        "per_page": min(100, max_results - len(commits)),
+                        "page": page,
+                    },
+                )
+                if response.status_code >= 400:
+                    raise RuntimeError(
+                        f"GitHub list commits failed for {repo}: HTTP {response.status_code} "
+                        f"{response.text[:300]}"
+                    )
+                batch = list(response.json())
+                if not batch:
+                    break
+                commits.extend(batch)
+                if len(batch) < 100:
+                    break
+                page += 1
+        return commits[:max_results]
+
     def item_document(self, repo: str, item: dict[str, Any]) -> dict[str, Any]:
         number = int(item.get("number") or 0)
         is_pr = "pull_request" in (item or {})
@@ -136,6 +171,49 @@ class GitHubConnector(ConnectorPort):
                 "kind": kind,
                 "labels": labels,
                 "updated_at": updated,
+            },
+        }
+
+    def commit_document(self, repo: str, commit: dict[str, Any]) -> dict[str, Any]:
+        sha = str(commit.get("sha") or "")
+        if not sha:
+            raise ValueError("Commit missing sha")
+        short_sha = sha[:7]
+        source_id = f"{repo}@{short_sha}"
+        commit_obj = commit.get("commit") or {}
+        message = str(commit_obj.get("message") or "").strip()
+        title_line = message.splitlines()[0] if message else short_sha
+        author_obj = commit_obj.get("author") or {}
+        committer_obj = commit_obj.get("committer") or {}
+        gh_author = (commit.get("author") or {}).get("login")
+        author_name = str(author_obj.get("name") or gh_author or "unknown")
+        authored_at = str(author_obj.get("date") or "")
+        pushed_at = str(committer_obj.get("date") or authored_at)
+        url = str(commit.get("html_url") or "")
+        parts = [
+            f"GitHub commit: {source_id}",
+            f"Repository: {repo}",
+            f"Full SHA: {sha}",
+            f"Author: {author_name}" + (f" (@{gh_author})" if gh_author else ""),
+            f"Authored at: {authored_at or 'unknown'}",
+            f"Pushed to GitHub at: {pushed_at or 'unknown'}",
+            f"Message:\n{message[:8000]}",
+        ]
+        return {
+            "source": "github",
+            "source_id": source_id,
+            "title": title_line,
+            "content": "\n".join(parts),
+            "url": url,
+            "metadata": {
+                "repo": repo,
+                "sha": sha,
+                "short_sha": short_sha,
+                "author": gh_author or author_name,
+                "author_name": author_name,
+                "authored_at": authored_at,
+                "pushed_at": pushed_at,
+                "kind": "commit",
             },
         }
 

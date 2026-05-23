@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     github_repos: str = ""
     github_sync_days: int = 90
     github_max_results_per_repo: int = 50
+    github_max_commits_per_repo: int = 50
 
     # Phase 2 Slack read (bounded: explicit channel IDs)
     slack_channel_ids: str = ""

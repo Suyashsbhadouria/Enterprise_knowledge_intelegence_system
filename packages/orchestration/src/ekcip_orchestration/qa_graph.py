@@ -17,14 +17,17 @@ logger = get_logger(__name__)
 
 CONFLUENCE_PAGE_ID_PATTERN = re.compile(r"/pages/(\d+)(?:/|$|\?)")
 CONFLUENCE_PAGE_REF_PATTERN = re.compile(r"\bpage[:\s#](\d+)\b", re.IGNORECASE)
-GITHUB_REF_PATTERN = re.compile(r"\b[\w.-]+/[\w.-]+[#!]\d+\b")
+GITHUB_REF_PATTERN = re.compile(
+    r"\b[\w.-]+/[\w.-]+(?:[#!]\d+|@[a-f0-9]{7,40})\b",
+    re.IGNORECASE,
+)
 SLACK_MESSAGE_REF_PATTERN = re.compile(r"\bC[A-Z0-9]{8,}:\d{10,}\b")
 
 QA_SYSTEM_PROMPT = """You are EKCIP, an enterprise knowledge assistant.
 Answer using ONLY the provided organizational context (Jira, Confluence, GitHub, Slack, Neo4j graph).
 Prefer graph relationship data for assignee/ownership questions when present.
 If context is insufficient, say what is missing and which source would help.
-Be concise and factual. Reference issue keys, PRs, pages, and Slack threads when relevant.
+Be concise and factual. Reference issue keys, PRs, commits, pages, and Slack threads when relevant.
 Do not invent assignees, statuses, or document content not present in the context."""
 
 
