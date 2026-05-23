@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "C:\\Users\\Relanto\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "args": [
+        "-m",
+        "code_review_graph",
+        "serve"
+      ],
+      "cwd": "C:\\Users\\Relanto\\Desktop\\Python\\Enterprise knowledge intellligence platform - PranayV2",
+      "type": "stdio"
+    }
+  }
+}

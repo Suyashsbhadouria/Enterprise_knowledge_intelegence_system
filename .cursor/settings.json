@@ -1,0 +1,40 @@
+{
+  "plugins": {
+    "atlassian": {
+      "enabled": true
+    },
+    "neon-postgres": {
+      "enabled": true
+    },
+    "superpowers": {
+      "enabled": true
+    },
+    "redis-development": {
+      "enabled": true
+    },
+    "huggingface-skills": {
+      "enabled": true
+    },
+    "mongodb": {
+      "enabled": true
+    },
+    "firebase": {
+      "enabled": true
+    },
+    "pinecone": {
+      "enabled": true
+    },
+    "astronomer-data": {
+      "enabled": true
+    },
+    "appwrite-plugin": {
+      "enabled": true
+    },
+    "docs-canvas": {
+      "enabled": true
+    },
+    "slack": {
+      "enabled": true
+    }
+  }
+}
