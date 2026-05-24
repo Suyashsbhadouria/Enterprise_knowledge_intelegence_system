@@ -57,5 +57,5 @@ async def test_knowledge_status_includes_slack(client):
     response = await client.get("/v1/knowledge/status")
     assert response.status_code == 200
     body = response.json()
-    assert "slack_chunks" in body["data"]
+    assert "slack_entities" in body["data"]
     assert "slack_configured" in body["data"]

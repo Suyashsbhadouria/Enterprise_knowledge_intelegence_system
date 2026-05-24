@@ -102,5 +102,5 @@ async def test_knowledge_status_includes_confluence(client):
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    assert "confluence_chunks" in body["data"]
+    assert "confluence_entities" in body["data"]
     assert "confluence_configured" in body["data"]

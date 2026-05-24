@@ -133,6 +133,34 @@ class GitHubConnector(ConnectorPort):
                 page += 1
         return commits[:max_results]
 
+    async def get_item(self, repo: str, number: int) -> dict[str, Any]:
+        """Fetch a single issue or pull request by number (live)."""
+        owner, name = repo.split("/", 1)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{_API_ROOT}/repos/{owner}/{name}/issues/{number}",
+                headers=self._headers(),
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"GitHub get_item failed for {repo}#{number}: HTTP {response.status_code}"
+            )
+        return response.json()
+
+    async def get_commit(self, repo: str, sha: str) -> dict[str, Any]:
+        """Fetch a single commit by SHA (live)."""
+        owner, name = repo.split("/", 1)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{_API_ROOT}/repos/{owner}/{name}/commits/{sha}",
+                headers=self._headers(),
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"GitHub get_commit failed for {repo}@{sha}: HTTP {response.status_code}"
+            )
+        return response.json()
+
     def item_document(self, repo: str, item: dict[str, Any]) -> dict[str, Any]:
         number = int(item.get("number") or 0)
         is_pr = "pull_request" in (item or {})

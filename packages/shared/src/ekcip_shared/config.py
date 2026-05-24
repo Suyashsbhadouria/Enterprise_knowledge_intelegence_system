@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -28,11 +29,11 @@ class Settings(BaseSettings):
     neo4j_password: str | None = None
     neo4j_database: str = "neo4j"
 
-    # LLM fallback chain: grok → nvidia → huggingface → gemini (no OpenAI)
-    llm_provider_order: str = "grok,nvidia,huggingface,gemini"
-    xai_api_key: str | None = Field(
+    # LLM fallback chain: groq → nvidia → huggingface → gemini (no OpenAI)
+    llm_provider_order: str = "groq,nvidia,huggingface,gemini"
+    groq_api_key: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("XAI_API_KEY", "GROK_API_KEY"),
+        validation_alias=AliasChoices("GROQ_API_KEY"),
     )
     nvidia_api_key: str | None = None
     huggingface_api_key: str | None = Field(
@@ -43,7 +44,7 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     )
-    grok_model: str = "grok-3-mini"
+    groq_model: str = "llama-3.3-70b-versatile"
     nvidia_model: str = "meta/llama-3.1-8b-instruct"
     huggingface_model: str = "meta-llama/Meta-Llama-3-8B-Instruct"
     gemini_model: str = "gemini-2.0-flash"
@@ -57,6 +58,14 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "text-embedding-004"
     huggingface_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     knowledge_top_k: int = 5
+    # Comma-separated sources stored in the knowledge index (embeddings). Default: Confluence only.
+    knowledge_vector_sources: str = "confluence"
+    # TTL for live connector fetch cache in Redis (seconds).
+    knowledge_cache_ttl_seconds: int = 600
+    knowledge_live_fetch_max_results: int = 15
+    # Deprecated: no longer syncs all sources before each chat query.
+    knowledge_refresh_on_query: bool = False
+    knowledge_query_sync_max_results: int = 50
     jira_sync_jql: str = "updated >= -90d ORDER BY updated DESC"
     confluence_sync_cql: str = (
         'type=page AND lastModified >= now("-90d") order by lastModified desc'
@@ -77,6 +86,12 @@ class Settings(BaseSettings):
     actions_enabled: bool = True
     actions_require_approval: bool = True
 
+    # Phase 5 meeting transcripts (bounded: directory of export files)
+    meetings_transcripts_dir: str = ""
+    meetings_sync_days: int = 90
+    meetings_max_files: int = 100
+    meetings_chunk_max_chars: int = 2000
+
     # Enterprise dev seed: sync real tenant data (no fake Jira issues)
     seed_jira_project_keys: str = ""
     seed_jira_days: int = 90
@@ -84,6 +99,12 @@ class Settings(BaseSettings):
     seed_max_projects: int = 20
     seed_confluence_space_keys: str = ""
     seed_max_confluence_spaces: int = 10
+
+    # Publish Nexus fixture into live Jira / Confluence / Slack (development)
+    enterprise_publish_jira_project_map: str = ""
+    enterprise_publish_confluence_space_map: str = ""
+    enterprise_publish_slack_channel_map: str = ""
+    enterprise_publish_jira_label: str = "nexus-dynamics-demo"
 
     jira_base_url: str | None = None
     jira_email: str | None = None
@@ -148,14 +169,14 @@ class Settings(BaseSettings):
             raise ValueError("API_KEY is required in production")
         if not any(
             (
-                self.xai_api_key,
+                self.groq_api_key,
                 self.nvidia_api_key,
                 self.huggingface_api_key,
                 self.gemini_api_key,
             )
         ):
             warnings.append(
-                "No LLM API keys set (XAI_API_KEY, NVIDIA_API_KEY, HUGGINGFACE_API_KEY, GEMINI_API_KEY)"
+                "No LLM API keys set (GROQ_API_KEY, NVIDIA_API_KEY, HUGGINGFACE_API_KEY, GEMINI_API_KEY)"
             )
         if self.neo4j_uri.strip() and not self.neo4j_password:
             warnings.append("NEO4J_URI is set but NEO4J_PASSWORD is missing (Aura credentials)")
@@ -165,7 +186,7 @@ class Settings(BaseSettings):
 
     def has_llm_provider(self) -> bool:
         return bool(
-            self.xai_api_key
+            self.groq_api_key
             or self.nvidia_api_key
             or self.huggingface_api_key
             or self.gemini_api_key
@@ -196,6 +217,13 @@ class Settings(BaseSettings):
     @property
     def slack_configured(self) -> bool:
         return bool(self.slack_bot_token and self.slack_channel_ids.strip())
+
+    @property
+    def meetings_configured(self) -> bool:
+        raw = self.meetings_transcripts_dir.strip()
+        if not raw:
+            return False
+        return Path(raw).expanduser().is_dir()
 
 
 @lru_cache

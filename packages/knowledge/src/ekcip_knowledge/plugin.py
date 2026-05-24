@@ -18,6 +18,7 @@ class KnowledgePlugin:
         page_ids: list[str] | None = None,
         github_ids: list[str] | None = None,
         slack_ids: list[str] | None = None,
+        meeting_ids: list[str] | None = None,
         sources: list[str] | None = None,
         top_k: int = 5,
     ) -> tuple[list[RetrievalHit], list[Citation]]:
@@ -27,6 +28,7 @@ class KnowledgePlugin:
             page_ids=page_ids,
             github_ids=github_ids,
             slack_ids=slack_ids,
+            meeting_ids=meeting_ids,
             sources=sources,
             top_k=top_k,
         )
@@ -35,9 +37,9 @@ class KnowledgePlugin:
     def format_context(hits: list[RetrievalHit], citations: list[Citation]) -> str:
         if not hits:
             return (
-                "No indexed knowledge matched this question. "
-                "Sync sources: POST /v1/knowledge/jira/sync, /confluence/sync, "
-                "/github/sync, /slack/sync."
+                "No knowledge matched this question from live sources or indexed Confluence pages. "
+                "Verify connector credentials, mention specific issue keys or pages with @, "
+                "or sync Confluence documentation for semantic search."
             )
         sections: list[str] = []
         for index, hit in enumerate(hits, start=1):

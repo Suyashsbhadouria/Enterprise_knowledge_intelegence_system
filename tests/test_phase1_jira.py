@@ -81,5 +81,5 @@ async def test_knowledge_status_endpoint(client):
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    assert "jira_chunks" in body["data"]
-    assert "confluence_chunks" in body["data"]
+    assert "jira_entities" in body["data"]
+    assert "confluence_entities" in body["data"]

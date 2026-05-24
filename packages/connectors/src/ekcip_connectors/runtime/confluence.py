@@ -38,12 +38,13 @@ def html_to_text(html: str) -> str:
 
 
 class ConfluenceConnector(ConnectorPort):
-    """Confluence Cloud REST client (read-only, Phase 2)."""
+    """Confluence Cloud REST client (read + page create for enterprise publish)."""
 
     name = "confluence"
     capabilities = (
         ConnectorCapability.READ,
         ConnectorCapability.SEARCH,
+        ConnectorCapability.WRITE,
     )
 
     def __init__(self, wiki_base_url: str, email: str, api_token: str) -> None:
@@ -160,6 +161,45 @@ class ConfluenceConnector(ConnectorPort):
         if response.status_code >= 400:
             raise RuntimeError(f"Confluence get_page failed: HTTP {response.status_code}")
         return response.json()
+
+    async def create_page(
+        self,
+        *,
+        space_key: str,
+        title: str,
+        body_html: str,
+        parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": "page",
+            "title": title,
+            "space": {"key": space_key},
+            "body": {
+                "storage": {
+                    "value": body_html,
+                    "representation": "storage",
+                }
+            },
+        }
+        if parent_id:
+            payload["ancestors"] = [{"id": parent_id}]
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{self.api_root}/content",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json=payload,
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Confluence create_page failed: HTTP {response.status_code} "
+                f"{response.text[:400]}"
+            )
+        return response.json()
+
+    async def find_page_by_title(self, space_key: str, title: str) -> dict[str, Any] | None:
+        cql = f'space = "{space_key}" AND title = "{title.replace(chr(34), "")}" AND type = page'
+        pages = await self.search_pages(cql, max_results=1)
+        return pages[0] if pages else None
 
     def page_document(self, page: dict[str, Any]) -> dict[str, Any]:
         page_id = str(page.get("id", ""))

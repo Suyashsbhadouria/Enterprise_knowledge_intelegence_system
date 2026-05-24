@@ -15,6 +15,18 @@ async def db_session(test_engine):
         yield session
 
 
+def test_detect_send_slack_message_to_at_channel():
+    drafts = detect_action_drafts(
+        "send a message to @social telling everyone that i am on leave tomorrow",
+        allowed_slack_channels=["C0B56PL2Z63"],
+        slack_channel_names={"social": "C0B56PL2Z63"},
+    )
+    assert len(drafts) == 1
+    assert drafts[0].action_type == ActionType.SEND_SLACK_MESSAGE
+    assert drafts[0].payload["channel_id"] == "C0B56PL2Z63"
+    assert "on leave tomorrow" in drafts[0].payload["text"].lower()
+
+
 def test_detect_send_slack_message():
     drafts = detect_action_drafts(
         'Send a Slack message to channel C01234567 saying "Please confirm the API contract."',

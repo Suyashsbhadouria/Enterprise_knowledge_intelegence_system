@@ -1,0 +1,11 @@
+Acme Corporation — Steering committee (20 May 2026)
+
+Client: Diane Okonkwo (VP Operations), Nexus: Morgan Blake, Taylor Nguyen
+
+Discussion:
+- ACME-205 SSO cutover targeted 14–15 June pending CORE-101.
+- ACME-210 billing module phased rollout approved for pilot users.
+- ACME-204 data migration deferred until CORE-103 RLS complete.
+- Training (ACME-206) to start week of 2 June using Confluence 20015.
+
+Decision: Proceed with UAT on acme-uat tenant (ACME-203) this week.

@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 
 class LlmRouter:
-    """Try providers in order: Grok → NVIDIA → Hugging Face → Gemini."""
+    """Try providers in order: Groq → NVIDIA → Hugging Face → Gemini."""
 
     def __init__(self, providers: list[LlmProvider]) -> None:
         self._providers = providers

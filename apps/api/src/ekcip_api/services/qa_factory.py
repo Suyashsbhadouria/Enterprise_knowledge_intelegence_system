@@ -1,5 +1,7 @@
 from ekcip_graph.retriever import GraphRetriever
+from ekcip_knowledge.cache import RedisKnowledgeCache
 from ekcip_knowledge.embeddings import build_embedding_router
+from ekcip_knowledge.live_fetch import LiveDataFetcher
 from ekcip_knowledge.plugin import KnowledgePlugin
 from ekcip_knowledge.retrieval import KnowledgeRetriever
 from ekcip_knowledge.store import KnowledgeStore
@@ -16,7 +18,17 @@ def build_qa_runner(
 ) -> QaGraphRunner:
     store = KnowledgeStore(session)
     embedding_router = build_embedding_router(settings)
-    retriever = KnowledgeRetriever(store, embedding_router)
+    cache = RedisKnowledgeCache(
+        settings.redis_url,
+        ttl_seconds=settings.knowledge_cache_ttl_seconds,
+    )
+    live_fetcher = LiveDataFetcher(settings, cache)
+    retriever = KnowledgeRetriever(
+        store,
+        embedding_router,
+        settings=settings,
+        live_fetcher=live_fetcher,
+    )
     plugin = KnowledgePlugin(retriever)
     graph_retriever = GraphRetriever(settings) if settings.neo4j_configured else None
     return QaGraphRunner(plugin, llm_router, graph_retriever)

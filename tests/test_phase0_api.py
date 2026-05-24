@@ -31,7 +31,7 @@ async def test_llm_status(client):
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    assert body["data"]["provider_order"] == ["grok", "nvidia", "huggingface", "gemini"]
+    assert body["data"]["provider_order"] == ["groq", "nvidia", "huggingface", "gemini"]
 
 
 @pytest.mark.asyncio

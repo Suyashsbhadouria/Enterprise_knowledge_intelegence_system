@@ -1,0 +1,16 @@
+Nexus Dynamics — Cross-team standup (21 May 2026)
+
+Attendees: Priya Sharma (Atlas), Morgan Blake (Beacon/Acme), Riley Chen (Cedar/Meridian), Sam Rivera (Delta Ops)
+
+Priya: CORE-101 OIDC is code-complete but blocked on CORE-105 Vault approval. This blocks ACME-205 and MERID-302.
+
+Morgan: Acme executive dashboard signed off (ACME-201, Confluence 20010). Diane Okonkwo wants SSO date confirmation — still waiting on platform.
+
+Riley: MERID-301 audit trail in staging for Dr. Patel. BAA addendum (page 30008) is the gating item for patient portal SSO.
+
+Sam: Active SEV-2 OPS-404 latency incident. War room C099OPS0001. May impact Acme cutover weekend.
+
+Action items:
+- Priya to chase InfoSec on CORE-105 by Friday.
+- Morgan to send Acme revised timeline if OPS-404 not resolved by Thursday.
+- Riley to schedule compliance review for MERID-303 encryption.

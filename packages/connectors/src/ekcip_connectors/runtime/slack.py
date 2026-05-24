@@ -114,6 +114,31 @@ class SlackConnector(ConnectorPort):
     def oldest_timestamp(days: int) -> str:
         return str(int(time.time()) - max(days, 1) * 86400)
 
+    async def list_joined_channels(self, *, limit: int = 200) -> list[dict[str, str]]:
+        """List workspace channels the bot is a member of (id + name)."""
+        channels: list[dict[str, str]] = []
+        cursor: str | None = None
+        while len(channels) < limit:
+            params: dict[str, Any] = {
+                "types": "public_channel,private_channel",
+                "exclude_archived": "true",
+                "limit": min(200, limit - len(channels)),
+            }
+            if cursor:
+                params["cursor"] = cursor
+            data = await self._api_get("conversations.list", params)
+            for channel in data.get("channels") or []:
+                if not channel.get("is_member"):
+                    continue
+                channel_id = str(channel.get("id") or "")
+                name = str(channel.get("name") or "")
+                if channel_id and name:
+                    channels.append({"id": channel_id, "name": name})
+            cursor = (data.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                break
+        return channels[:limit]
+
     async def get_channel_info(self, channel_id: str) -> dict[str, Any]:
         """Resolve channel name; falls back to channel_id if read scope is missing."""
         try:
@@ -163,6 +188,22 @@ class SlackConnector(ConnectorPort):
             if not cursor:
                 break
         return messages[:max_messages]
+
+    async def get_message(self, channel_id: str, message_ts: str) -> dict[str, Any]:
+        """Fetch a single channel message by timestamp (live)."""
+        data = await self._api_get(
+            "conversations.history",
+            {
+                "channel": channel_id,
+                "latest": message_ts,
+                "inclusive": True,
+                "limit": 1,
+            },
+        )
+        messages = list(data.get("messages") or [])
+        if not messages:
+            raise RuntimeError(f"Slack message not found: {channel_id}:{message_ts}")
+        return messages[0]
 
     async def post_message(
         self,

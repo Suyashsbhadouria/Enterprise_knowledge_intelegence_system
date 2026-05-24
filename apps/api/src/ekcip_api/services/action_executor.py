@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ekcip_api.db.models import ProposedAction
 from ekcip_api.schemas.actions import ProposedActionResponse
 from ekcip_api.services.action_proposals import _to_response, mark_approved
+from ekcip_connectors.jira_issue_resolve import resolve_jira_issue_key
 from ekcip_connectors.runtime.jira import JiraConnector
 from ekcip_connectors.runtime.slack import SlackConnector, build_slack_connector
 from ekcip_connectors.slack_channels import parse_channel_ids
@@ -35,9 +36,13 @@ def _build_jira(settings: Settings) -> JiraConnector | None:
 
 
 def _allowed_slack_channels(settings: Settings) -> set[str]:
-    if not settings.slack_channel_ids.strip():
+    raw = settings.slack_channel_ids.strip()
+    if not raw:
         return set()
-    return set(parse_channel_ids(settings.slack_channel_ids))
+    try:
+        return set(parse_channel_ids(raw))
+    except ValueError:
+        return {part.strip().upper() for part in raw.split(",") if part.strip()}
 
 
 def _ensure_slack_channel(channel_id: str, allowed: set[str]) -> None:
@@ -84,13 +89,37 @@ async def _execute_payload(
         if jira is None:
             raise RuntimeError("Jira is not configured")
         model = AddJiraCommentPayload.model_validate(payload)
-        return await jira.add_comment(model.issue_key, model.body)
+        resolved_key = await resolve_jira_issue_key(
+            jira,
+            model.issue_key,
+            nexus_label=settings.enterprise_publish_jira_label or None,
+        )
+        result = await jira.add_comment(resolved_key, model.body)
+        if resolved_key != model.issue_key:
+            return {
+                **result,
+                "requested_issue_key": model.issue_key,
+                "resolved_issue_key": resolved_key,
+            }
+        return result
 
     if action_type == ActionType.UPDATE_ISSUE_STATUS.value:
         if jira is None:
             raise RuntimeError("Jira is not configured")
         model = UpdateIssueStatusPayload.model_validate(payload)
-        return await jira.transition_issue(model.issue_key, model.status_name)
+        resolved_key = await resolve_jira_issue_key(
+            jira,
+            model.issue_key,
+            nexus_label=settings.enterprise_publish_jira_label or None,
+        )
+        result = await jira.transition_issue(resolved_key, model.status_name)
+        if resolved_key != model.issue_key:
+            return {
+                **result,
+                "requested_issue_key": model.issue_key,
+                "resolved_issue_key": resolved_key,
+            }
+        return result
 
     if action_type == ActionType.CREATE_REMINDER.value:
         model = CreateReminderPayload.model_validate(payload)
@@ -124,7 +153,8 @@ async def execute_approved_action(
     if action.status == "rejected":
         raise ValueError(f"Action {action.id} was rejected")
     if action.status == "failed":
-        raise ValueError(f"Action {action.id} previously failed: {action.error}")
+        action.status = "approved"
+        action.error = None
     if action.status == "pending":
         if settings.actions_require_approval:
             raise ValueError("Action requires approval before execution")
@@ -165,6 +195,17 @@ async def approve_and_execute(
     approved_by: str,
     execute: bool,
 ) -> ProposedActionResponse:
+    if action.status == "failed":
+        if not execute:
+            raise ValueError(
+                f"Action {action.id} failed previously; approve with execute=true to retry"
+            )
+        return await execute_approved_action(
+            session,
+            action,
+            settings=settings,
+            approved_by=approved_by,
+        )
     if action.status != "pending":
         raise ValueError(f"Action {action.id} is not pending (status={action.status})")
     await mark_approved(session, action, approved_by=approved_by)

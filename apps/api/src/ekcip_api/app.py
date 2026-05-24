@@ -4,10 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from ekcip_api.db.session import close_db, init_db
+from ekcip_api.db.session import close_db, get_session_factory, init_db
+from ekcip_api.services.knowledge_source_stats import (
+    KnowledgeSourceStatsSnapshot,
+    compute_all_source_stats,
+)
 from ekcip_api.exceptions import register_exception_handlers
 from ekcip_api.middleware.trace import TraceIdMiddleware
-from ekcip_api.routes import admin, actions, connectors, conversations, graph, health, knowledge, llm
+from ekcip_api.routes import admin, actions, connectors, conversations, graph, health, knowledge, llm, mentions
 from ekcip_connectors.factory import build_runtime_connectors
 from ekcip_connectors.mcp_registry import get_mcp_registry
 from ekcip_graph.client import verify_neo4j_connection
@@ -35,6 +39,12 @@ async def lifespan(app: FastAPI):
         neon_server=settings.mcp_server_neon,
     )
     app.state.llm_router = build_llm_router(settings)
+    async with get_session_factory()() as session:
+        try:
+            app.state.knowledge_source_stats = await compute_all_source_stats(session, settings)
+        except Exception as exc:
+            logger.warning("knowledge_source_stats_startup_failed", error=str(exc)[:300])
+            app.state.knowledge_source_stats = KnowledgeSourceStatsSnapshot()
     if settings.neo4j_configured:
         neo4j_status = await verify_neo4j_connection(settings)
         logger.info("neo4j_startup_check", **neo4j_status)
@@ -109,6 +119,7 @@ def create_app() -> FastAPI:
     application.include_router(llm.router, prefix="/v1/llm", tags=["llm"])
     application.include_router(graph.router, prefix="/v1/graph", tags=["graph"])
     application.include_router(knowledge.router, prefix="/v1/knowledge", tags=["knowledge"])
+    application.include_router(mentions.router, prefix="/v1/mentions", tags=["mentions"])
     if settings.app_env == "development":
         application.include_router(admin.router, prefix="/v1/admin", tags=["admin"])
     return application

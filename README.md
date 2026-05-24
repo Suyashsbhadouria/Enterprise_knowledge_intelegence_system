@@ -1,6 +1,6 @@
 # EKCIP — Enterprise Knowledge & Coordination Intelligence Platform
 
-Phase 0 foundation, **Phase 1** Jira Q&A, **Phase 2** multi-source read, **Phase 3** GraphRAG, and **Phase 4** approval-aware actions (Slack post/schedule, Jira comment/status) with human gate before execution.
+Phase 0 foundation, **Phase 1** Jira Q&A, **Phase 2** multi-source read, **Phase 3** GraphRAG, **Phase 4** approval-aware actions (Slack post/schedule, Jira comment/status) with human gate before execution, and **Phase 5** meeting transcript ingestion (started).
 
 ## Prerequisites
 
@@ -53,9 +53,18 @@ uvicorn ekcip_api.main:app --reload --port 8000
 
 Open http://127.0.0.1:8000/docs
 
+## Web UI (Next.js)
+
+```powershell
+.\scripts\start-api.ps1    # terminal 1 — API on :8000
+.\scripts\start-web.ps1    # terminal 2 — UI on http://localhost:3000
+```
+
+The UI covers dashboard health, RAG chat (citations + action proposals), knowledge sync, action approval, dev admin seed/publish, and API key settings. In chat, type **`@`** for autocomplete on Slack channels (by name, not ID), Jira issues/projects, GitHub repos, and indexed Confluence pages (`GET /v1/mentions/suggest`). Set `NEXT_PUBLIC_API_URL` in `apps/web/.env.local` if the API is not on `http://127.0.0.1:8000`.
+
 ## LLM providers (no OpenAI)
 
-Chat uses: **Grok → NVIDIA → Hugging Face → Gemini** (see `.env.example`).  
+Chat uses: **Groq → NVIDIA → Hugging Face → Gemini** (see `.env.example`).  
 Status: `GET /v1/llm/status`
 
 ## MCP & Cursor plugins
@@ -82,6 +91,8 @@ Uses the same Atlassian email + API token as Jira. Set `CONFLUENCE_BASE_URL` or 
 1. Sync pages: `POST /v1/knowledge/confluence/sync` — CQL must be **bounded** (default: `type=page AND lastModified >= now("-90d") order by lastModified desc`).
 2. Status: `GET /v1/knowledge/status` — returns `jira_chunks`, `confluence_chunks`, and `total_chunks`.
 3. Chat searches **both** Jira and Confluence; cite page titles and issue keys from indexed content.
+
+**Knowledge retrieval:** Only **Confluence** pages are stored in the vector index (Postgres embeddings). Jira, GitHub, Slack, and meeting data are **fetched live** from the relevant connector when the question references them (issue keys, `@` mentions, keywords). Results are cached in **Redis** for `KNOWLEDGE_CACHE_TTL_SECONDS` (default 600). Sync Confluence via `POST /v1/knowledge/confluence/sync`; other sync routes are optional and not used for chat RAG.
 
 ### GitHub (read-only)
 
@@ -115,7 +126,7 @@ Requires Neo4j populated via `POST /v1/admin/seed` (enterprise graph from real J
 
 Actions are **proposed** from chat, stored in Postgres, and **never execute** until approved.
 
-1. Ask with an action intent, e.g. `Send a Slack message to C01234567 saying "Can you confirm the rollout time?"` or `Add a comment on SCRUM-12 saying blocked on auth`.
+1. Ask with an action intent, e.g. `Send a Slack message to @general saying "Can you confirm the rollout time?"` (channel names via `@`) or `Add a comment on @SCRUM-12 saying blocked on auth`.
 2. Chat response includes `proposed_actions[]` with previews (`phase`: `4-qa-proposed` when actions are drafted).
 3. List pending actions: `GET /v1/actions/conversations/{conversation_id}/actions`
 4. Approve (optionally execute): `POST /v1/actions/{action_id}/approve` with `{"execute": true}`
@@ -136,6 +147,60 @@ ACTIONS_ENABLED=true
 ACTIONS_REQUIRE_APPROVAL=true
 ```
 
+## Phase 5: Meeting transcripts (in progress)
+
+Index Teams / Google Meet / plain-text exports into the knowledge plane (searchable in chat alongside Jira, Confluence, GitHub, and Slack).
+
+1. Create a folder and drop transcript files (`.vtt`, `.srt`, `.txt`, `.md`):
+
+```env
+MEETINGS_TRANSCRIPTS_DIR=./data/meetings
+```
+
+2. Sync directory: `POST /v1/knowledge/meetings/sync` — only files modified within `MEETINGS_SYNC_DAYS` (default 90), up to `MEETINGS_MAX_FILES`.
+3. Or upload one file: `POST /v1/knowledge/meetings/upload` (multipart `file`).
+4. `GET /v1/knowledge/status` includes `meetings_chunks` and `meetings_phase: 5`.
+
+**Example questions:** “What did we decide in the standup about auth?”, “Summarize meeting transcript standup-2024-05-15”
+
+*Roadmap (remaining Phase 5):* Microsoft Teams adapter, SSO/RBAC, multi-tenant isolation, webhook-scale ingestion, eval harness, cost-aware model routing.
+
+### Enterprise fixture seed (dev, no live APIs)
+
+Interconnected **Nexus Dynamics** demo org: 4 teams, 3 clients, 25+ Jira issues, 12 Confluence pages, 35+ Slack messages, 3 meeting transcripts. **No GitHub.**
+
+```powershell
+.\scripts\seed-enterprise.ps1
+# or: POST /v1/admin/seed-enterprise  {"clear_existing": true}
+```
+
+For action-detection tests, add fixture Slack channels to `.env`:
+
+```env
+SLACK_CHANNEL_IDS=C099ATLAS01,C099ACME001,C099MERID01,C099OPS0001
+```
+
+The seed response includes `test_queries` (knowledge, graph, actions, API smoke).
+
+### Publish Nexus to **live** Jira, Confluence, Slack + Neo4j
+
+Creates real issues/pages/messages in **your tenant** (label `nexus-dynamics-demo`), maps `CORE-101` → `SCRUM-123`, re-indexes Postgres + Neo4j.
+
+1. Configure `.env` (use your real project/space/channel keys):
+
+```env
+ENTERPRISE_PUBLISH_JIRA_PROJECT_MAP=CORE:SCRUM,ACME:SCRUM,MERID:SCRUM,OPS:SCRUM
+ENTERPRISE_PUBLISH_CONFLUENCE_SPACE_MAP=CORE:TEAM,ACME:TEAM,MERID:TEAM,OPS:TEAM
+SLACK_CHANNEL_IDS=C0123,C0456,C0789,C0999
+SLACK_BOT_TOKEN=xoxb-...
+```
+
+2. Dry-run first: `POST /v1/admin/publish-enterprise` with `{"dry_run": true}`
+
+3. Publish: `.\scripts\publish-enterprise.ps1` or `{"dry_run": false}`
+
+In Jira, filter `labels = nexus-dynamics-demo`. Summaries look like `[Nexus CORE-101] ...`.
+
 ## API
 
 | Method | Path | Description |
@@ -149,11 +214,16 @@ ACTIONS_REQUIRE_APPROVAL=true
 | POST | `/v1/knowledge/confluence/sync` | Index Confluence pages (read + embed) |
 | POST | `/v1/knowledge/github/sync` | Index GitHub issues, PRs, and commits (read + embed) |
 | POST | `/v1/knowledge/slack/sync` | Index Slack channel messages (read + embed) |
+| POST | `/v1/knowledge/meetings/sync` | Index meeting transcript files from `MEETINGS_TRANSCRIPTS_DIR` |
+| POST | `/v1/knowledge/meetings/upload` | Upload and index a single transcript file |
 | POST | `/v1/conversations` | Create thread |
 | POST | `/v1/conversations/{id}/messages` | RAG chat with citations and optional `proposed_actions` |
+| GET | `/v1/mentions/suggest?q=` | `@` autocomplete: Slack channels, Jira, GitHub, Confluence |
 | GET | `/v1/actions/conversations/{id}/actions` | List proposed/approved actions for a thread |
 | POST | `/v1/actions/{action_id}/approve` | Approve (and optionally execute) a proposed action |
 | POST | `/v1/actions/{action_id}/reject` | Reject a proposed action |
+| POST | `/v1/admin/seed-enterprise` | Dev: Nexus Dynamics fixture (Jira, Confluence, Slack, meetings) |
+| POST | `/v1/admin/publish-enterprise` | Dev: Create Nexus data in live Jira/Confluence/Slack + re-index |
 
 ## Tests
 

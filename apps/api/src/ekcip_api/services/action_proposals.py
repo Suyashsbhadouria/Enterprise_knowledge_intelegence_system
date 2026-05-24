@@ -58,13 +58,21 @@ def preview_action_drafts(
     *,
     question: str,
     answer: str = "",
+    slack_channel_names: dict[str, str] | None = None,
+    allowed_slack_channels: list[str] | None = None,
 ) -> list[ProposedActionDraft]:
     if not settings.actions_enabled:
         return []
+    allowed = (
+        allowed_slack_channels
+        if allowed_slack_channels is not None
+        else _allowed_slack_channels(settings)
+    )
     return detect_action_drafts(
         question,
         answer=answer,
-        allowed_slack_channels=_allowed_slack_channels(settings),
+        allowed_slack_channels=allowed,
+        slack_channel_names=slack_channel_names,
         actions_enabled=settings.actions_enabled,
     )
 

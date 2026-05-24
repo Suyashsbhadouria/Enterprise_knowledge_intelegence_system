@@ -5,6 +5,16 @@ from ekcip_orchestration.actions.response import (
 )
 
 
+def test_action_primary_for_at_channel_send():
+    question = "send a message to @social telling everyone that i am on leave tomorrow"
+    drafts = detect_action_drafts(
+        question,
+        allowed_slack_channels=["C0B56PL2Z63"],
+        slack_channel_names={"social": "C0B56PL2Z63"},
+    )
+    assert is_action_primary_request(question, drafts) is True
+
+
 def test_action_primary_for_slack_send():
     question = (
         "Send a Slack message to C01234567 saying 'Can you confirm the rollout time?'"

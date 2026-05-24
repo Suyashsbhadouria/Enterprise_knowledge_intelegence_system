@@ -16,7 +16,7 @@ async def llm_status(request: Request) -> JSONResponse:
             "provider_order": settings.llm_provider_order.split(","),
             "configured": router_instance.configured_providers(),
             "models": {
-                "grok": settings.grok_model,
+                "groq": settings.groq_model,
                 "nvidia": settings.nvidia_model,
                 "huggingface": settings.huggingface_model,
                 "gemini": settings.gemini_model,

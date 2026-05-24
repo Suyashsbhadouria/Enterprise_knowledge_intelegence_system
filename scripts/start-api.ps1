@@ -32,7 +32,7 @@ if (-not (Test-Path ".venv")) {
 }
 
 & ".\.venv\Scripts\Activate.ps1"
-pip install -q -e ".[dev]"
+#pip install -q -e ".[dev]"
 
 & "$PSScriptRoot\start-infra.ps1"
 alembic upgrade head

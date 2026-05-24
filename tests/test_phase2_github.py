@@ -122,5 +122,5 @@ async def test_knowledge_status_includes_github(client):
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    assert "github_chunks" in body["data"]
+    assert "github_entities" in body["data"]
     assert "github_configured" in body["data"]

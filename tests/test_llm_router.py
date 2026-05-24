@@ -27,26 +27,26 @@ class _FakeProvider:
 
 @pytest.mark.asyncio
 async def test_router_uses_first_successful_provider():
-    grok = _FakeProvider("grok", fail=True)
+    groq = _FakeProvider("groq", fail=True)
     nvidia = _FakeProvider("nvidia", content="from nvidia")
-    router = LlmRouter([grok, nvidia])
+    router = LlmRouter([groq, nvidia])
 
     result = await router.complete(
         LlmCompletionRequest(messages=[LlmMessage(role=LlmRole.USER, content="hello")])
     )
 
     assert result.content == "from nvidia"
-    assert grok.calls == 1
+    assert groq.calls == 1
     assert nvidia.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_router_falls_through_to_gemini():
-    grok = _FakeProvider("grok", configured=False)
+    groq = _FakeProvider("groq", configured=False)
     nvidia = _FakeProvider("nvidia", fail=True)
     hf = _FakeProvider("huggingface", fail=True)
     gemini = _FakeProvider("gemini", content="from gemini")
-    router = LlmRouter([grok, nvidia, hf, gemini])
+    router = LlmRouter([groq, nvidia, hf, gemini])
 
     result = await router.complete(
         LlmCompletionRequest(messages=[LlmMessage(role=LlmRole.USER, content="hello")])
@@ -62,7 +62,7 @@ async def test_router_falls_through_to_gemini():
 async def test_router_raises_when_all_fail():
     router = LlmRouter(
         [
-            _FakeProvider("grok", fail=True),
+            _FakeProvider("groq", fail=True),
             _FakeProvider("nvidia", fail=True),
         ]
     )

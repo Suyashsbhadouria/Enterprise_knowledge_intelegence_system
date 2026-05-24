@@ -36,11 +36,27 @@ class KnowledgeStore:
         await self._session.flush()
         return chunk.id
 
+    async def delete_chunks_for_sources(self, sources: list[str]) -> int:
+        if not sources:
+            return 0
+        result = await self._session.execute(
+            delete(KnowledgeChunk).where(KnowledgeChunk.source.in_(sources))
+        )
+        return int(result.rowcount or 0)
+
     async def count_chunks(self, source: str | None = None) -> int:
         query = select(func.count()).select_from(KnowledgeChunk)
         if source:
             query = query.where(KnowledgeChunk.source == source)
         result = await self._session.execute(query)
+        return int(result.scalar_one())
+
+    async def count_distinct_source_ids(self, source: str) -> int:
+        result = await self._session.execute(
+            select(func.count(func.distinct(KnowledgeChunk.source_id))).where(
+                KnowledgeChunk.source == source
+            )
+        )
         return int(result.scalar_one())
 
     async def search(
@@ -79,6 +95,47 @@ class KnowledgeStore:
                     metadata=dict(row.metadata_json or {}),
                 )
             )
+        return hits
+
+    async def search_by_title_substring(
+        self,
+        source: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[RetrievalHit]:
+        if not query.strip():
+            return []
+        pattern = f"%{query.strip()}%"
+        result = await self._session.execute(
+            select(KnowledgeChunk)
+            .where(
+                KnowledgeChunk.source == source,
+                KnowledgeChunk.title.ilike(pattern),
+            )
+            .limit(limit * 3)
+        )
+        rows = list(result.scalars().all())
+        seen: set[str] = set()
+        hits: list[RetrievalHit] = []
+        for row in rows:
+            if row.source_id in seen:
+                continue
+            seen.add(row.source_id)
+            hits.append(
+                RetrievalHit(
+                    chunk_id=row.id,
+                    source=row.source,
+                    source_id=row.source_id,
+                    title=row.title,
+                    content=row.content,
+                    url=row.url,
+                    score=1.0,
+                    metadata=dict(row.metadata_json or {}),
+                )
+            )
+            if len(hits) >= limit:
+                break
         return hits
 
     async def get_by_source_ids(self, source: str, source_ids: list[str]) -> list[RetrievalHit]:

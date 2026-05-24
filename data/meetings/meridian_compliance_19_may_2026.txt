@@ -1,0 +1,9 @@
+Meridian Health — Compliance sync (19 May 2026)
+
+Attendees: Dr. Anika Patel (Meridian CISO), Riley Chen, Priya Sharma
+
+MERID-301 immutable audit trail design approved with minor notes.
+MERID-302 patient portal SSO cannot proceed until BAA addendum signed.
+MERID-305 pen test: three medium findings, remediation in progress.
+
+Meridian requires all test data synthetic — reference MERID-310.

@@ -184,25 +184,27 @@ class JiraConnector(ConnectorPort):
         summary: str,
         description: str,
         issue_type_id: str | None = None,
+        labels: list[str] | None = None,
     ) -> dict[str, Any]:
         type_id = issue_type_id or await self.get_default_issue_type(project_key)
-        payload = {
-            "fields": {
-                "project": {"key": project_key},
-                "summary": summary,
-                "description": {
-                    "type": "doc",
-                    "version": 1,
-                    "content": [
-                        {
-                            "type": "paragraph",
-                            "content": [{"type": "text", "text": description}],
-                        }
-                    ],
-                },
-                "issuetype": {"id": type_id},
-            }
+        fields: dict[str, Any] = {
+            "project": {"key": project_key},
+            "summary": summary,
+            "description": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": description[:32000]}],
+                    }
+                ],
+            },
+            "issuetype": {"id": type_id},
         }
+        if labels:
+            fields["labels"] = labels
+        payload = {"fields": fields}
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{self._base_url}/rest/api/3/issue",
@@ -213,7 +215,20 @@ class JiraConnector(ConnectorPort):
             raise RuntimeError(
                 f"Jira create_issue failed: HTTP {response.status_code} {response.text[:400]}"
             )
-        return response.json()
+        data = response.json()
+        issue_key = data.get("key")
+        if issue_key:
+            return {**data, "key": issue_key}
+        return data
+
+    async def search_issues_by_label(
+        self,
+        label: str,
+        *,
+        max_results: int = 100,
+    ) -> list[dict[str, Any]]:
+        jql = f'labels = "{label}" ORDER BY created DESC'
+        return await self.search_issues(jql, max_results=max_results)
 
     async def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
         payload = {

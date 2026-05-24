@@ -11,6 +11,12 @@ from ekcip_knowledge.plugin import KnowledgePlugin
 from ekcip_knowledge.types import Citation, RetrievalHit
 from ekcip_llm.router import LlmRouter
 from ekcip_llm.types import LlmCompletionRequest, LlmMessage, LlmRole
+from ekcip_orchestration.actions.llm_detector import (
+    ActionIntent,
+    build_action_system_prompt,
+    parse_llm_action_response,
+)
+from ekcip_orchestration.actions.types import ProposedActionDraft
 from ekcip_shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,8 +29,13 @@ GITHUB_REF_PATTERN = re.compile(
 )
 SLACK_MESSAGE_REF_PATTERN = re.compile(r"\bC[A-Z0-9]{8,}:\d{10,}\b")
 
+MEETING_REF_PATTERN = re.compile(
+    r"\b(?:meeting[:\s#]|transcript[:\s#])([\w.-]+)(?::\d+)?\b",
+    re.IGNORECASE,
+)
+
 QA_SYSTEM_PROMPT = """You are EKCIP, an enterprise knowledge assistant.
-Answer using ONLY the provided organizational context (Jira, Confluence, GitHub, Slack, Neo4j graph).
+Answer using ONLY the provided organizational context (Jira, Confluence, GitHub, Slack, meetings, Neo4j graph).
 Prefer graph relationship data for assignee/ownership questions when present.
 If context is insufficient, say what is missing and which source would help.
 Be concise and factual. Reference issue keys, PRs, commits, pages, and Slack threads when relevant.
@@ -39,6 +50,7 @@ class QaState:
     page_ids: list[str] = field(default_factory=list)
     github_ids: list[str] = field(default_factory=list)
     slack_ids: list[str] = field(default_factory=list)
+    meeting_ids: list[str] = field(default_factory=list)
     hits: list[RetrievalHit] = field(default_factory=list)
     citations: list[Citation] = field(default_factory=list)
     context: str = ""
@@ -60,7 +72,10 @@ class QaResult:
     page_ids: list[str]
     github_ids: list[str]
     slack_ids: list[str]
+    meeting_ids: list[str]
     graph_modes: list[str]
+    action_intent: ActionIntent = "question"
+    action_drafts: list[ProposedActionDraft] = field(default_factory=list)
 
 
 class QaGraphRunner:
@@ -91,12 +106,14 @@ class QaGraphRunner:
             )
             github_ids = list(dict.fromkeys(GITHUB_REF_PATTERN.findall(question)))
             slack_ids = list(dict.fromkeys(SLACK_MESSAGE_REF_PATTERN.findall(question)))
+            meeting_ids = list(dict.fromkeys(MEETING_REF_PATTERN.findall(question)))
             return {
                 **state,
                 "issue_keys": keys,
                 "page_ids": page_ids,
                 "github_ids": github_ids,
                 "slack_ids": slack_ids,
+                "meeting_ids": meeting_ids,
             }
 
         async def retrieve(state: dict) -> dict:
@@ -106,6 +123,7 @@ class QaGraphRunner:
                 page_ids=state.get("page_ids") or None,
                 github_ids=state.get("github_ids") or None,
                 slack_ids=state.get("slack_ids") or None,
+                meeting_ids=state.get("meeting_ids") or None,
             )
             vector_context = KnowledgePlugin.format_context(hits, citations)
             graph_context = ""
@@ -160,7 +178,7 @@ class QaGraphRunner:
                 return {
                     **state,
                     "answer": (
-                        "No LLM provider configured. Set XAI_API_KEY, NVIDIA_API_KEY, "
+                        "No LLM provider configured. Set GROQ_API_KEY, NVIDIA_API_KEY, "
                         "HUGGINGFACE_API_KEY, or GEMINI_API_KEY."
                     ),
                     "phase": "3-qa-no-llm",
@@ -173,23 +191,45 @@ class QaGraphRunner:
             )
             messages = list(state.get("history") or [])
             messages.append(LlmMessage(role=LlmRole.USER, content=user_prompt))
+
+            system_prompt = QA_SYSTEM_PROMPT
+            if state.get("actions_enabled"):
+                action_prompt = build_action_system_prompt(
+                    actions_enabled=True,
+                    slack_channel_names=state.get("slack_channel_names") or {},
+                    allowed_slack_channels=state.get("allowed_slack_channels") or [],
+                )
+                if action_prompt.strip():
+                    system_prompt = f"{QA_SYSTEM_PROMPT}\n{action_prompt}"
+
             result = await self._llm_router.complete(
                 LlmCompletionRequest(
                     messages=[
-                        LlmMessage(role=LlmRole.SYSTEM, content=QA_SYSTEM_PROMPT),
+                        LlmMessage(role=LlmRole.SYSTEM, content=system_prompt),
                         *messages,
                     ],
                     task="chat",
                 )
             )
-            footer = KnowledgePlugin.format_citations_footer(state.get("citations") or [])
-            final_answer = result.content + footer
+            parsed = parse_llm_action_response(
+                result.content,
+                slack_channel_names=state.get("slack_channel_names") or {},
+                allowed_slack_channels=state.get("allowed_slack_channels") or [],
+                original_question=str(state.get("original_question") or state["question"]),
+                actions_enabled=bool(state.get("actions_enabled")),
+            )
+            final_answer = parsed.visible_reply
+            phase = "4-action-proposed" if parsed.intent == "action" and parsed.drafts else "3-qa"
+            if parsed.intent == "both" and parsed.drafts:
+                phase = "4-qa-proposed"
             return {
                 **state,
                 "answer": final_answer,
                 "llm_provider": result.provider,
                 "llm_model": result.model,
-                "phase": "3-qa",
+                "phase": phase,
+                "action_intent": parsed.intent,
+                "action_drafts": list(parsed.drafts),
             }
 
         graph.add_node("understand", understand)
@@ -208,9 +248,14 @@ class QaGraphRunner:
         *,
         question: str,
         history: list[LlmMessage] | None = None,
+        original_question: str | None = None,
+        slack_channel_names: dict[str, str] | None = None,
+        allowed_slack_channels: list[str] | None = None,
+        actions_enabled: bool = True,
     ) -> QaResult:
         initial: dict[str, Any] = {
             "question": question,
+            "original_question": original_question or question,
             "history": history or [],
             "issue_keys": [],
             "page_ids": [],
@@ -218,6 +263,11 @@ class QaGraphRunner:
             "citations": [],
             "context": "",
             "answer": "",
+            "slack_channel_names": dict(slack_channel_names or {}),
+            "allowed_slack_channels": list(allowed_slack_channels or []),
+            "actions_enabled": actions_enabled,
+            "action_intent": "question",
+            "action_drafts": [],
         }
         final = await self._graph.ainvoke(initial)
         return QaResult(
@@ -230,5 +280,8 @@ class QaGraphRunner:
             page_ids=final.get("page_ids") or [],
             github_ids=final.get("github_ids") or [],
             slack_ids=final.get("slack_ids") or [],
+            meeting_ids=final.get("meeting_ids") or [],
             graph_modes=final.get("graph_modes") or [],
+            action_intent=final.get("action_intent") or "question",
+            action_drafts=final.get("action_drafts") or [],
         )

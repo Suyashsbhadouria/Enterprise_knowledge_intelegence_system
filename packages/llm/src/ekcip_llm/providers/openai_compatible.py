@@ -6,7 +6,7 @@ from ekcip_llm.types import LlmCompletionRequest, LlmCompletionResult, LlmMessag
 
 
 class OpenAiCompatibleProvider(LlmProvider):
-    """OpenAI-style chat/completions for Grok, NVIDIA NIM, and Hugging Face router."""
+    """OpenAI-style chat/completions for Groq, NVIDIA NIM, and Hugging Face router."""
 
     def __init__(
         self,
